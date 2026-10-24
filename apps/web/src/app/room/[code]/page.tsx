@@ -19,7 +19,7 @@ import {
 import { WaitingLobby } from '@/components/room/WaitingLobby';
 import { GameContainer } from '@/components/room/GameContainer';
 import { AvatarPicker } from '@/components/common/AvatarPicker';
-import { AlertCircle, Sparkles, ArrowRight, Home } from 'lucide-react';
+import { AlertCircle, Sparkles, ArrowRight, Home, RefreshCw, Radio } from 'lucide-react';
 
 export default function RoomPage() {
   const params = useParams();
@@ -27,6 +27,8 @@ export default function RoomPage() {
   const roomCode = ((params?.code as string) || '').toUpperCase().trim();
 
   const [connected, setConnected] = useState(false);
+  const [connectingElapsedSec, setConnectingElapsedSec] = useState(0);
+  const [roomNotFound, setRoomNotFound] = useState(false);
   const [roomSnapshot, setRoomSnapshot] = useState<RoomSnapshot | null>(null);
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [publicGameState, setPublicGameState] = useState<any>(null);
@@ -41,6 +43,15 @@ export default function RoomPage() {
   const [joinNickname, setJoinNickname] = useState('');
   const [joinAvatar, setJoinAvatar] = useState('cat');
   const [isJoining, setIsJoining] = useState(false);
+
+  // Timer for tracking cold-start delays on free cloud hosts
+  useEffect(() => {
+    if (connected || roomSnapshot) return;
+    const interval = setInterval(() => {
+      setConnectingElapsedSec((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [connected, roomSnapshot]);
 
   // Initialize socket and attempt session restore
   useEffect(() => {
@@ -60,11 +71,14 @@ export default function RoomPage() {
       if (saved && saved.token) {
         socket.emit('room:reconnect', { roomCode, sessionToken: saved.token }, (res) => {
           if (!res.success) {
-            // Reconnection expired, show join modal
-            const lastProf = getLastUserProfile();
-            setJoinNickname(lastProf.nickname || saved.nickname || '');
-            setJoinAvatar(lastProf.avatar || saved.avatar || 'cat');
-            setNeedsJoinModal(true);
+            if (res.error?.toLowerCase().includes('not found') || res.error?.toLowerCase().includes('expired')) {
+              setRoomNotFound(true);
+            } else {
+              const lastProf = getLastUserProfile();
+              setJoinNickname(lastProf.nickname || saved.nickname || '');
+              setJoinAvatar(lastProf.avatar || saved.avatar || 'cat');
+              setNeedsJoinModal(true);
+            }
           }
         });
       } else {
@@ -80,13 +94,14 @@ export default function RoomPage() {
     };
 
     const onSnapshot = (snapshot: RoomSnapshot) => {
+      setRoomNotFound(false);
       setRoomSnapshot(snapshot);
       if (snapshot.status === 'LOBBY') {
         setGameResults(null);
         setPublicGameState(null);
         setPrivateGameState(null);
       }
-      // Find current player by stored token or ID
+      // Find current player
       const saved = getSavedSession(roomCode);
       if (saved) {
         const me = snapshot.players.find(p => p.nickname === saved.nickname) || snapshot.players[0];
@@ -121,29 +136,14 @@ export default function RoomPage() {
       });
     };
 
-    const onPlayerUpdated = (player: Player) => {
-      setRoomSnapshot(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          players: prev.players.map(p => p.id === player.id ? player : p),
-        };
-      });
-      setCurrentPlayer(prev => prev?.id === player.id ? player : prev);
-    };
-
-    const onGameSelected = ({ gameId }: { gameId: string }) => {
-      setRoomSnapshot(prev => prev ? { ...prev, selectedGameId: gameId } : prev);
-    };
-
     const onChatMessage = (msg: ChatMessage) => {
-      setChatMessages(prev => [...prev.slice(-49), msg]);
+      setChatMessages((prev) => [...prev.slice(-80), msg]);
     };
 
     const onReaction = (reaction: EmojiReaction) => {
-      setReactions(prev => [...prev, reaction]);
+      setReactions((prev) => [...prev.slice(-15), reaction]);
       setTimeout(() => {
-        setReactions(prev => prev.filter(r => r.id !== reaction.id));
+        setReactions((prev) => prev.filter((r) => r.id !== reaction.id));
       }, 2500);
     };
 
@@ -191,6 +191,9 @@ export default function RoomPage() {
     };
 
     const onError = ({ message }: { message: string }) => {
+      if (message?.toLowerCase().includes('not found') || message?.toLowerCase().includes('expired')) {
+        setRoomNotFound(true);
+      }
       setErrorMessage(message);
     };
 
@@ -199,8 +202,6 @@ export default function RoomPage() {
     socket.on('room:snapshot', onSnapshot);
     socket.on('room:player_joined', onPlayerJoined);
     socket.on('room:player_left', onPlayerLeft);
-    socket.on('room:player_updated', onPlayerUpdated);
-    socket.on('room:game_selected', onGameSelected);
     socket.on('room:chat_message', onChatMessage);
     socket.on('room:reaction', onReaction);
     socket.on('game:public_state', onPublicState);
@@ -220,8 +221,6 @@ export default function RoomPage() {
       socket.off('room:snapshot', onSnapshot);
       socket.off('room:player_joined', onPlayerJoined);
       socket.off('room:player_left', onPlayerLeft);
-      socket.off('room:player_updated', onPlayerUpdated);
-      socket.off('room:game_selected', onGameSelected);
       socket.off('room:chat_message', onChatMessage);
       socket.off('room:reaction', onReaction);
       socket.off('game:public_state', onPublicState);
@@ -239,7 +238,11 @@ export default function RoomPage() {
 
     setIsJoining(true);
     setErrorMessage('');
+
     const socket = getSocket();
+    if (!socket.connected) {
+      socket.connect();
+    }
 
     socket.emit(
       'room:join',
@@ -250,19 +253,20 @@ export default function RoomPage() {
           saveSession(roomCode, res.sessionToken, joinNickname.trim(), joinAvatar);
           setNeedsJoinModal(false);
         } else {
-          setErrorMessage(res.error || 'Failed to join room');
+          if (res.error?.toLowerCase().includes('not found') || res.error?.toLowerCase().includes('expired')) {
+            setRoomNotFound(true);
+          }
+          setErrorMessage(res.error || 'Failed to join room. Please check the code.');
         }
       }
     );
   };
 
-  // Actions
   const handleSelectGame = (gameId: string) => {
     getSocket().emit('room:select_game', { gameId });
   };
 
   const handleStartGame = () => {
-    setGameResults(null);
     getSocket().emit('room:start_game');
   };
 
@@ -283,7 +287,7 @@ export default function RoomPage() {
     router.push('/');
   };
 
-  const handleUpdateSettings = (settings: any) => {
+  const handleUpdateSettings = (settings: { maxPlayers?: number; allowLateJoin?: boolean }) => {
     getSocket().emit('room:update_settings', { settings });
   };
 
@@ -318,21 +322,63 @@ export default function RoomPage() {
     getSocket().emit('room:return_to_lobby');
   };
 
-  // First-time join modal overlay
+  // 1. Room Not Found or Expired State
+  if (roomNotFound) {
+    return (
+      <div className="min-h-[75vh] flex items-center justify-center p-4">
+        <div className="glass-panel max-w-md w-full p-8 rounded-3xl border border-coral/40 text-center space-y-5 shadow-glow">
+          <div className="w-14 h-14 rounded-2xl bg-coral/15 border border-coral/30 text-coral flex items-center justify-center mx-auto">
+            <AlertCircle className="w-8 h-8" />
+          </div>
+
+          <div>
+            <span className="text-xs font-bold text-coral uppercase tracking-wider block">
+              Room Unavailable
+            </span>
+            <h2 className="text-2xl font-black text-white mt-1">
+              Room &ldquo;{roomCode}&rdquo; Expired
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-300 mt-2 leading-relaxed">
+              This party room does not exist or has already finished. Create a new room to start playing!
+            </p>
+          </div>
+
+          <div className="space-y-2.5 pt-2">
+            <button
+              onClick={() => router.push('/#join')}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-brand-600 to-coral text-white font-bold text-sm shadow-glow flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4 text-yellow" />
+              <span>Create New Room</span>
+            </button>
+            <button
+              onClick={() => router.push('/')}
+              className="w-full py-3 rounded-2xl bg-surface-elevated hover:bg-surface border border-border text-slate-300 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Home className="w-3.5 h-3.5" />
+              <span>Back to Home</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. First-time Join Modal (When invited via direct link)
   if (needsJoinModal) {
     return (
       <div className="min-h-[80vh] flex items-center justify-center p-4">
-        <div className="glass-panel max-w-md w-full p-6 sm:p-8 rounded-3xl border border-border shadow-glow space-y-6">
+        <div className="glass-panel max-w-md w-full p-6 sm:p-8 rounded-3xl border border-border shadow-glow space-y-6 animate-fadeIn">
           <div className="text-center space-y-2">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-500/20 text-brand-300 text-xs font-bold border border-brand-500/30">
               <Sparkles className="w-3.5 h-3.5 text-brand-400" />
-              <span>You have been invited!</span>
+              <span>You Have Been Invited!</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-black text-white">
               Join Room: <span className="font-mono text-brand-400">{roomCode}</span>
             </h2>
             <p className="text-xs text-slate-400">
-              Pick a nickname and avatar to jump straight into the party.
+              Pick your nickname and character to enter the room.
             </p>
           </div>
 
@@ -354,7 +400,8 @@ export default function RoomPage() {
                 value={joinNickname}
                 onChange={(e) => setJoinNickname(e.target.value)}
                 placeholder="e.g. PixelChamp"
-                className="w-full px-4 py-3 rounded-xl bg-surface-elevated border border-border text-white text-sm font-medium focus:outline-none focus:border-brand-500"
+                className="w-full px-4 py-3 rounded-xl bg-surface-elevated border border-border text-white text-sm font-semibold placeholder-slate-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30"
+                autoFocus
                 required
               />
             </div>
@@ -364,13 +411,13 @@ export default function RoomPage() {
             <button
               type="submit"
               disabled={isJoining}
-              className="w-full py-3.5 rounded-2xl text-sm font-bold text-white bg-gradient-to-r from-brand-600 to-coral hover:opacity-95 shadow-glow transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full py-3.5 rounded-2xl text-sm font-bold text-white bg-gradient-to-r from-brand-600 to-coral hover:opacity-95 shadow-glow transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
             >
               {isJoining ? (
                 <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                  <span>Join Party</span>
+                  <span>Enter Room</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -381,7 +428,7 @@ export default function RoomPage() {
             <button
               type="button"
               onClick={() => router.push('/')}
-              className="text-xs text-slate-500 hover:text-slate-300 inline-flex items-center gap-1"
+              className="text-xs text-slate-400 hover:text-white inline-flex items-center gap-1 cursor-pointer"
             >
               <Home className="w-3.5 h-3.5" />
               <span>Back to Home</span>
@@ -392,17 +439,63 @@ export default function RoomPage() {
     );
   }
 
-  // Loading room snapshot state
+  // 3. Loading room snapshot state with cold-start feedback
   if (!roomSnapshot || !currentPlayer) {
     return (
-      <div className="min-h-[80vh] flex flex-col items-center justify-center p-4 text-center space-y-4">
-        <span className="w-10 h-10 border-3 border-brand-500 border-t-transparent rounded-full animate-spin" />
-        <h2 className="text-xl font-bold text-white">Entering Room {roomCode}...</h2>
-        <p className="text-xs text-slate-400">Connecting to server session...</p>
+      <div className="min-h-[80vh] flex flex-col items-center justify-center p-4 text-center space-y-4 animate-fadeIn">
+        <div className="relative">
+          <div className="w-12 h-12 border-3 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto" />
+          <Radio className="w-5 h-5 text-brand-400 absolute inset-0 m-auto" />
+        </div>
+
+        <div className="space-y-1">
+          <h2 className="text-xl sm:text-2xl font-black text-white">
+            Connecting to Room {roomCode}...
+          </h2>
+          <p className="text-xs text-slate-400">
+            Synchronizing game session and lobby presence
+          </p>
+        </div>
+
+        {/* Cold-start helper note for free cloud hosts (Render / Railway) */}
+        {connectingElapsedSec > 4 && (
+          <div className="glass-panel p-4 rounded-2xl border border-yellow/30 max-w-sm mx-auto text-xs text-slate-300 space-y-2 animate-fadeIn">
+            <p className="text-yellow font-bold">
+              ⚡ Waking up game server instance...
+            </p>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              If the server was idle, free cloud hosts take ~15–25 seconds to spin up. Hang tight!
+            </p>
+          </div>
+        )}
+
+        {connectingElapsedSec > 10 && (
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={() => {
+                const socket = getSocket();
+                socket.disconnect();
+                socket.connect();
+              }}
+              className="px-4 py-2 rounded-xl bg-surface-elevated hover:bg-surface border border-border text-xs text-slate-300 flex items-center gap-1.5 cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Retry</span>
+            </button>
+            <button
+              onClick={() => router.push('/')}
+              className="px-4 py-2 rounded-xl bg-surface-elevated hover:bg-surface border border-border text-xs text-slate-300 flex items-center gap-1.5 cursor-pointer"
+            >
+              <Home className="w-3.5 h-3.5" />
+              <span>Home</span>
+            </button>
+          </div>
+        )}
       </div>
     );
   }
 
+  // 4. Room Ready: Lobby or Active Game
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       {errorMessage && (
@@ -413,7 +506,7 @@ export default function RoomPage() {
           </div>
           <button
             onClick={() => setErrorMessage('')}
-            className="text-xs font-bold text-coral hover:text-white"
+            className="text-xs font-bold text-coral hover:text-white cursor-pointer"
           >
             Dismiss
           </button>

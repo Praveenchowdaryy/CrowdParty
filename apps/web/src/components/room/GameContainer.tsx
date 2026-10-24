@@ -13,9 +13,11 @@ import { DrawAndGuessView } from './games/DrawAndGuessView';
 import { QuizBattleView } from './games/QuizBattleView';
 import { HotTakesView } from './games/HotTakesView';
 import { ReactionArenaView } from './games/ReactionArenaView';
+import { WordDashView } from './games/WordDashView';
+import { MostLikelyToView } from './games/MostLikelyToView';
 import { PodiumResults } from './PodiumResults';
 import { ChatSidebar } from './ChatSidebar';
-import { Clock, Users, ArrowLeft, Volume2, VolumeX, MessageSquare } from 'lucide-react';
+import { Clock, Users, ArrowLeft, MessageSquare, Gamepad2 } from 'lucide-react';
 import { formatTime } from '@/lib/utils';
 
 interface GameContainerProps {
@@ -52,7 +54,8 @@ export const GameContainer: React.FC<GameContainerProps> = ({
   onReturnToLobby,
 }) => {
   const [timeLeftMs, setTimeLeftMs] = useState(0);
-  const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<'game' | 'chat'>('game');
+  const [lastReadMessageCount, setLastReadMessageCount] = useState(0);
 
   // Authoritative local countdown calculation based on server deadline
   useEffect(() => {
@@ -70,6 +73,15 @@ export const GameContainer: React.FC<GameContainerProps> = ({
     const interval = setInterval(updateTimer, 200);
     return () => clearInterval(interval);
   }, [publicState?.deadline]);
+
+  // Track unread messages on mobile when chat is closed
+  useEffect(() => {
+    if (mobileTab === 'chat') {
+      setLastReadMessageCount(chatMessages.length);
+    }
+  }, [chatMessages.length, mobileTab]);
+
+  const unreadCount = Math.max(0, chatMessages.length - lastReadMessageCount);
 
   if (!publicState) {
     return (
@@ -98,6 +110,15 @@ export const GameContainer: React.FC<GameContainerProps> = ({
     );
   }
 
+  const gameTitles: Record<string, string> = {
+    'draw-and-guess': 'Draw & Guess',
+    'quiz-battle': 'Quiz Battle',
+    'hot-takes': 'Hot Takes',
+    'reaction-arena': 'Reaction Arena',
+    'word-dash': 'Word Dash',
+    'most-likely-to': 'Most Likely To',
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-4">
       {/* Top Game HUD Bar */}
@@ -107,7 +128,7 @@ export const GameContainer: React.FC<GameContainerProps> = ({
           {currentPlayer.isHost && (
             <button
               onClick={onReturnToLobby}
-              className="p-1.5 rounded-lg bg-surface-elevated hover:bg-surface border border-border text-slate-400 hover:text-white transition-colors"
+              className="p-1.5 rounded-xl bg-surface-elevated hover:bg-surface border border-border text-slate-400 hover:text-white transition-colors cursor-pointer"
               title="Return to Lobby"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -116,7 +137,7 @@ export const GameContainer: React.FC<GameContainerProps> = ({
 
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs uppercase font-bold text-slate-400 tracking-wider">
+              <span className="text-xs uppercase font-bold text-slate-400 tracking-wider font-mono">
                 {room.code}
               </span>
               <span className="text-slate-600">•</span>
@@ -125,17 +146,14 @@ export const GameContainer: React.FC<GameContainerProps> = ({
               </span>
             </div>
             <h2 className="text-sm sm:text-base font-black text-white">
-              {publicState.gameId === 'draw-and-guess' ? 'Draw & Guess' :
-               publicState.gameId === 'quiz-battle' ? 'Quiz Battle' :
-               publicState.gameId === 'hot-takes' ? 'Hot Takes' :
-               publicState.gameId === 'reaction-arena' ? 'Reaction Arena' : 'Party Game'}
+              {gameTitles[publicState.gameId] || 'Party Game'}
             </h2>
           </div>
         </div>
 
         {/* Center: Authoritative Timer */}
         {publicState.deadline && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-surface-elevated border border-border font-mono font-black text-sm">
+          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-surface-elevated border border-border font-mono font-black text-sm">
             <Clock className={`w-4 h-4 ${
               timeLeftMs < 5000 ? 'text-coral animate-ping' : 'text-cyan'
             }`} />
@@ -145,27 +163,54 @@ export const GameContainer: React.FC<GameContainerProps> = ({
           </div>
         )}
 
-        {/* Right: Player count and Mobile Chat Trigger */}
+        {/* Right: Player count and Mobile View Switcher */}
         <div className="flex items-center gap-2">
           <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-400 bg-surface-elevated px-2.5 py-1.5 rounded-xl border border-border">
             <Users className="w-3.5 h-3.5 text-slate-400" />
             <span>{room.players.length} players</span>
           </div>
 
-          <button
-            onClick={() => setMobileChatOpen(!mobileChatOpen)}
-            className="lg:hidden p-2 rounded-xl bg-surface-elevated border border-border text-brand-400"
-            title="Toggle Chat"
-          >
-            <MessageSquare className="w-4 h-4" />
-          </button>
+          {/* Mobile Segments Tab Switcher (1-click, instant) */}
+          <div className="flex lg:hidden rounded-xl bg-surface p-1 border border-border">
+            <button
+              type="button"
+              onClick={() => setMobileTab('game')}
+              className={`px-3 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1 ${
+                mobileTab === 'game'
+                  ? 'bg-brand-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Gamepad2 className="w-3.5 h-3.5" />
+              <span>Game</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMobileTab('chat');
+                setLastReadMessageCount(chatMessages.length);
+              }}
+              className={`px-3 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1 relative ${
+                mobileTab === 'chat'
+                  ? 'bg-brand-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Chat</span>
+              {unreadCount > 0 && mobileTab !== 'chat' && (
+                <span className="w-2 h-2 rounded-full bg-coral animate-ping" />
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Main Game Arena + Chat Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left / Center: Game Play Area (8 cols) */}
-        <div className="lg:col-span-8 space-y-4">
+        {/* Left / Center: Game Play Area (8 cols on desktop, toggled on mobile) */}
+        <div className={`lg:col-span-8 space-y-4 ${mobileTab === 'game' ? 'block' : 'hidden lg:block'}`}>
           {publicState.gameId === 'draw-and-guess' && (
             <DrawAndGuessView
               publicState={publicState}
@@ -174,6 +219,7 @@ export const GameContainer: React.FC<GameContainerProps> = ({
               onSendAction={onSendGameAction}
               onSendStroke={onSendStroke}
               onClearCanvas={onClearCanvas}
+              onSendGuess={onSendMessage}
             />
           )}
 
@@ -201,10 +247,28 @@ export const GameContainer: React.FC<GameContainerProps> = ({
             />
           )}
 
+          {publicState.gameId === 'word-dash' && (
+            <WordDashView
+              publicState={publicState}
+              privateState={privateState}
+              onSendAction={onSendGameAction}
+            />
+          )}
+
+          {publicState.gameId === 'most-likely-to' && (
+            <MostLikelyToView
+              publicState={publicState}
+              privateState={privateState}
+              room={room}
+              currentPlayerId={currentPlayer.id}
+              onSendAction={onSendGameAction}
+            />
+          )}
+
           {/* Real-Time Live Scoreboard Mini-Pills */}
           <div className="glass-panel p-3 rounded-2xl border border-border flex items-center gap-2 overflow-x-auto">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 pl-1 shrink-0">
-              Game Scores:
+              Scoreboard:
             </span>
             {(publicState.leaderboard || []).map((p: any) => (
               <div
@@ -222,13 +286,14 @@ export const GameContainer: React.FC<GameContainerProps> = ({
           </div>
         </div>
 
-        {/* Right: Live Chat & Reactions Sidebar (4 cols) */}
-        <div className={`lg:col-span-4 h-[560px] ${mobileChatOpen ? 'block' : 'hidden lg:block'}`}>
+        {/* Right: Live Chat & Reactions Sidebar (4 cols on desktop, toggled on mobile) */}
+        <div className={`lg:col-span-4 h-[560px] ${mobileTab === 'chat' ? 'block' : 'hidden lg:block'}`}>
           <ChatSidebar
             messages={chatMessages}
             reactions={reactions}
             onSendMessage={onSendMessage}
             onSendReaction={onSendReaction}
+            onClose={() => setMobileTab('game')}
           />
         </div>
       </div>

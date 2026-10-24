@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, EmojiReaction } from '@crowdparty/shared';
-import { Send, MessageSquare, Sparkles } from 'lucide-react';
+import { Send, MessageSquare, Sparkles, X } from 'lucide-react';
 import { PlayerAvatar } from '../common/PlayerAvatar';
 
 interface ChatSidebarProps {
@@ -10,6 +10,7 @@ interface ChatSidebarProps {
   reactions: EmojiReaction[];
   onSendMessage: (text: string) => void;
   onSendReaction: (emoji: string) => void;
+  onClose?: () => void;
 }
 
 const QUICK_EMOJIS = [
@@ -28,12 +29,16 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   reactions,
   onSendMessage,
   onSendReaction,
+  onClose,
 }) => {
   const [inputText, setInputText] = useState('');
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
 
+  // FIX: Scroll ONLY the internal messages div, NEVER the window!
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesScrollRef.current) {
+      messagesScrollRef.current.scrollTop = messagesScrollRef.current.scrollHeight;
+    }
   }, [messages]);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -68,14 +73,28 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
             Room Chat & Guesses
           </span>
         </div>
-        <div className="flex items-center gap-1.5 text-[10px] text-mint font-semibold">
-          <span className="w-1.5 h-1.5 rounded-full bg-mint animate-pulse" />
-          <span>Synced</span>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 text-[10px] text-mint font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-mint animate-pulse" />
+            <span>Live</span>
+          </div>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="lg:hidden p-1 rounded-lg text-slate-400 hover:text-white"
+              title="Close chat"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 
       {/* Messages Scroll Area */}
-      <div className="flex-1 p-3 overflow-y-auto space-y-2.5 text-xs">
+      <div
+        ref={messagesScrollRef}
+        className="flex-1 p-3 overflow-y-auto space-y-2.5 text-xs overscroll-contain"
+      >
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center text-slate-500 py-8">
             <Sparkles className="w-6 h-6 text-slate-600 mb-2" />
@@ -115,7 +134,6 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
             );
           })
         )}
-        <div ref={chatEndRef} />
       </div>
 
       {/* Tactile Arcade Quick Reactions Bar */}

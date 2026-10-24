@@ -22,6 +22,8 @@ export const Footer: React.FC = () => {
               <li><Link href="/games" className="hover:text-white transition-colors">Quiz Battle</Link></li>
               <li><Link href="/games" className="hover:text-white transition-colors">Hot Takes</Link></li>
               <li><Link href="/games" className="hover:text-white transition-colors">Reaction Arena</Link></li>
+              <li><Link href="/games" className="hover:text-white transition-colors">Word Dash</Link></li>
+              <li><Link href="/games" className="hover:text-white transition-colors">Most Likely To</Link></li>
             </ul>
           </div>
 

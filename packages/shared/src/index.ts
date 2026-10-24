@@ -5,4 +5,6 @@ export * from './types/games/draw-and-guess';
 export * from './types/games/quiz-battle';
 export * from './types/games/hot-takes';
 export * from './types/games/reaction-arena';
+export * from './types/games/word-dash';
+export * from './types/games/most-likely-to';
 export * from './constants/games';

@@ -53,6 +53,32 @@ export const GAME_CATALOGUE: GameMetadata[] = [
     accentColor: '#06B6D4',
     tags: ['Reflexes', 'Speed', 'Arcade', 'Quick rounds'],
   },
+  {
+    id: 'word-dash',
+    title: 'Word Dash',
+    tagline: 'Unscramble words at warp speed!',
+    description: 'A rapid-fire anagram battle. Race against the clock to decipher scrambled letters and decode hints before your rivals.',
+    category: 'party',
+    minPlayers: 2,
+    maxPlayers: 20,
+    durationMinutes: 6,
+    icon: 'type',
+    accentColor: '#10B981',
+    tags: ['Anagrams', 'Speed', 'Vocabulary', 'Competitive'],
+  },
+  {
+    id: 'most-likely-to',
+    title: 'Most Likely To',
+    tagline: 'Crown your squad superlatives!',
+    description: 'Who would survive a zombie breakout? Who secretly has 80 browser tabs open? Vote for the person in your group who fits best!',
+    category: 'social',
+    minPlayers: 2,
+    maxPlayers: 20,
+    durationMinutes: 7,
+    icon: 'award',
+    accentColor: '#EC4899',
+    tags: ['Superlatives', 'Team Bonding', 'Hilarious', 'Icebreaker'],
+  },
 ];
 
 export const AVATAR_OPTIONS = [

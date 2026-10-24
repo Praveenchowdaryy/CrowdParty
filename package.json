@@ -13,6 +13,7 @@
     "build": "npm run build -w packages/shared && npm run build -w apps/server && npm run build -w apps/web",
     "build:web": "npm run build -w packages/shared && npm run build -w apps/web",
     "build:server": "npm run build -w packages/shared && npm run build -w apps/server",
+    "start:server": "node apps/server/dist/index.js",
     "test": "npm run test -w apps/server",
     "typecheck": "npm run typecheck -w packages/shared && npm run typecheck -w apps/server && npm run typecheck -w apps/web"
   },

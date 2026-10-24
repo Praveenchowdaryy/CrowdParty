@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: crowdparty-server
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build:server
+    startCommand: npm run start:server
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGIN
+        value: "*"
